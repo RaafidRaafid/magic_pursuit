@@ -21,29 +21,35 @@ class gameEnv(staticEnv):
             self.actions.append(temp)
 
     @staticmethod
-    def next_state(state, agentType, idx, action):
-        if agentType == 'Predator':
-            state[0][idx] = action[1]
-            death = np.where(state[1] == action[1])
-            state[1][death[0]] = -1.0
-        elif agentType == 'Prey':
+    def next_state(statee, actions):
+
+        state = [np.array(statee[0]), np.array(statee[1])]
+
+        for idx, action in enumerate(actions[1]):
+            if state[1][idx] == -1:
+                continue
             death = np.where(state[0] == action[1])
             if len(death[0]) > 0:
                 state[1][idx] = -1.0
             else:
                 state[1][idx] = action[1]
+        for idx, action in enumerate(actions[0]):
+            state[0][idx] = action[1]
+            death = np.where(state[1] == action[1])
+            state[1][death[0]] = -1.0
         return state
 
     @staticmethod
     def is_done_state(state, step_idx):
-        if np.sum(state[1]) == (-1)*len(state[1]):
-            return True
-        return step_idx >= 20
+        for i in range(len(state[1])):
+            if state[1][i] != -1:
+                return step_idx >= 20
+        return True
 
     @staticmethod
     def get_return(state, agentType, idx, root_state=None):
         if agentType == "Predator":
-            return np.count_nonzero(state[1] == -1.0) - np.count_nonzero(root_state[1] == -1.0)
+            return np.count_nonzero(state[1] == -1) - np.count_nonzero(root_state[1] == -1)
         elif agentType == "Prey":
             if state[1][idx] == -1.0:
                 return -1.0
@@ -65,13 +71,13 @@ class gameEnv(staticEnv):
         for line in f:
             line = line.split()
             for v in line:
-                pd.append(float(v))
+                pd.append(int(v))
         f.close()
         f = open(filename + "pr.txt")
         pr = []
         for line in f:
             line = line.split()
             for v in line:
-                pr.append(float(v))
+                pr.append(int(v))
         f.close()
         return np.array(adj), [np.array(pd), np.array(pr)]

@@ -23,19 +23,26 @@ class MCTSNode:
         self.predicted_moves = predicted_moves
         self.predicted_Q = predicted_Q
         self.actions = actions
-        self.child_N = np.zeros([len(self.actions)], dtype=np.float32)
-        self.child_W = np.zeros([len(self.actions)], dtype=np.float32)
-        self.original_prior = np.zeros([len(self.actions)], dtype=np.float32)
-        self.child_prior = np.zeros([len(self.actions)], dtype=np.float32)
         self.children = {}
         self.N = 0.0
         self.W = 0.0
 
         self.action_idx = {}
         self.idx_action = {}
-        for i in range(len(self.actions)):
-            self.action_idx[self.actions[i]] = i
-            self.idx_action[i] = self.actions[i]
+
+        if self.actions is None:
+            self.child_N = None
+            self.child_W = None
+            self.original_prior = None
+            self.child_prior = None
+        else:
+            self.child_N = np.zeros([len(self.actions)], dtype=np.float32)
+            self.child_W = np.zeros([len(self.actions)], dtype=np.float32)
+            self.original_prior = np.zeros([len(self.actions)], dtype=np.float32)
+            self.child_prior = np.zeros([len(self.actions)], dtype=np.float32)
+            for i in range(len(self.actions)):
+                self.action_idx[self.actions[i]] = i
+                self.idx_action[i] = self.actions[i]
 
     @property
     def Q(self):
@@ -54,7 +61,6 @@ class MCTSNode:
 
     @property
     def child_U(self):
-        # print("-", self.type, self.child_prior, self.child_N, self.state, self)
         for i in range(len(self.actions)):
             if self.actions[i] in self.children:
                 self.child_N[i] = self.children[self.actions[i]].N
@@ -67,27 +73,60 @@ class MCTSNode:
         Action_Score(s, a) = Q(s, a) + U(s, a) as in paper. A high value
         means the node should be traversed.
         """
-        # print(self.child_Q, self.child_U)
         return self.child_Q + self.child_U
 
-    def is_done(self):
+    def is_done(self, agentType, idx):
+        if agentType == "Prey" and self.state[1][idx] == -1:
+            return True
         return self.env.is_done_state(self.state, self.depth)
 
-    def create_child(self, agentType, idx, actions):
+    def select_leaf(self, agentType, idx):
+        current = self
+        while True:
+            current.N += 1
+            if not current.is_expanded:
+                break
+            if current.is_done(agentType, idx):
+                break
+            best_move = np.argmax(current.child_action_score)
+            if current.idx_action[best_move] not in current.children:
+                temp_moves = self.select_moves_from_pi(current.predicted_moves, current.state)
+                if agentType == "Predator":
+                    temp_moves[0][idx] = current.idx_action[best_move]
+                else:
+                    temp_moves[1][idx] = current.idx_action[best_move]
+                current = current.create_child(agentType, idx, temp_moves)
+            else:
+                current = current.children[current.idx_action[best_move]]
+        return current
 
-        new_state = self.state
-        for action in actions[1]:
-            new_state = self.env.next_state(new_state, "Prey", idx, action)
-        for action in actions[0]:
-            new_state = self.env.next_state(new_state, "Predator", idx, action)
+    def select_moves_from_pi(self, predicted_moves, state):
+
+        predator_moves = []
+        prey_moves = []
+        for i in range(len(predicted_moves[0])):
+            pi = predicted_moves[0][i]
+            move_idx = np.argmax(pi)
+            predator_moves.append(self.env.actions[state[0][i]][move_idx])
+        for i in range(len(state[1])):
+            if state[1][i] == -1:
+                prey_moves.append((-1, -1))
+                continue
+            pi = predicted_moves[1][i]
+            move_idx = np.argmax(pi)
+            prey_moves.append(self.env.actions[state[1][i]][move_idx])
+        return [predator_moves, prey_moves]
+
+    def create_child(self, agentType, idx, actions):
+        new_state = self.env.next_state(self.state, actions)
 
         if agentType == "Predator":
             self.children[actions[0][idx]] = MCTSNode(new_state, self.env, self.env.actions[actions[0][idx][1]],
-                                                      prev_action=self.action_idx[actions[0][idx][1]], parent=self)
+                                                      prev_action=self.action_idx[actions[0][idx]], parent=self)
             return self.children[actions[0][idx]]
         else:
             self.children[actions[1][idx]] = MCTSNode(new_state, self.env, self.env.actions[actions[1][idx][1]],
-                                                      prev_action=self.action_idx[actions[1][idx][1]], parent=self)
+                                                      prev_action=self.action_idx[actions[1][idx]], parent=self)
             return self.children[actions[1][idx]]
 
     def backup_value(self, value, up_to):
@@ -113,42 +152,29 @@ class MCTS:
         failsafe = 0
         while failsafe < 10:
             failsafe += 1
-
-            current = self.root
-            while True:
-                current.N += 1
-                if not current.is_expanded:
-                    break
-                if current.is_done():
-                    break
-                best_move = np.argmax(current.child_action_score)
-                if current.idx_action[best_move] not in current.children:
-                    temp_moves = current.predicted_moves
-                    if self.agentType == "Predator":
-                        temp_moves[0][self.idx] = current.idx_action[best_move]
-                    else:
-                        temp_moves[1][self.idx] = current.idx_action[best_move]
-
-                    current = current.create_child(temp_moves)
-                else:
-                    current = current.children[current.idx_action[best_move]]
+            leaf = self.root.select_leaf(self.agentType, self.idx)
 
             # leaf paoar por
-            if current.is_done():
+            if leaf.is_done(self.agentType, self.idx):
                 if self.agentType == "Predator":
-                    score = self.env.get_return(current.state, self.agentType, self.idx, self.root.state)
+                    score = self.env.get_return(leaf.state, self.agentType, self.idx, self.root.state)
                 else:
-                    score = self.env.get_return(current.state, self.agentType, self.idx)
-                current.backup_value(score, up_to=self.root)
+                    score = self.env.get_return(leaf.state, self.agentType, self.idx)
+                leaf.backup_value(score, up_to=self.root)
+                # while self.root.parent is not None:
+                #     self.root = self.root.parent
                 continue
             # new node
-            current.predicted_moves, Q_val = self.predict_agent_moves(current.state, current.depth,
-                                                                      self.agentType, self.idx)
+            leaf.predicted_moves, Q_val = self.predict_agent_moves(leaf.state, leaf.depth,
+                                                                   self.agentType, self.idx)
             if self.agentType == "Predator":
-                current.original_prior = current.predicted_moves[0][self.idx]
+                leaf.child_prior = leaf.predicted_moves[0][self.idx]
             else:
-                current.original_prior = current.predicted_moves[1][self.idx]
-            current.backup_value(Q_val, up_to=self.root)
+                leaf.child_prior = leaf.predicted_moves[1][self.idx]
+            leaf.backup_value(Q_val, up_to=self.root)
+            leaf.is_expanded = True
+            # while self.root.parent is not None:
+            #     self.root = self.root.parent
             break
 
     def pick_action(self):
@@ -163,32 +189,35 @@ class MCTS:
         return self.root.idx_action[move_idx], probs
 
     def predict_agent_moves(self, state, depth, agentType, idx):
-        feat_mat = self.backbone.step(self.one_hot_state(state))
+        feat_mat = self.backbone.step_model.step(self.one_hot_state(state))
         predator_moves = []
         prey_moves = []
         Q_val = None
         for i in range(len(state[0])):
-            pi, v = self.predator_netw[state[0][i]].step(feat_mat, depth)
+            pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
             pi = pi.data.numpy()
             if agentType == "Predator" and i == idx:
                 Q_val = v.data.numpy()
-            move_idx = np.argmax(pi)
-            predator_moves.append(self.env.actions[state[0][i]][move_idx])
+            predator_moves.append(pi)
         for i in range(len(state[1])):
-            pi, v = self.prey_netw[state[1][i]].step(feat_mat, depth)
+            if state[1][i] == -1:
+                prey_moves.append([])
+                continue
+            pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
             pi = pi.data.numpy()
             if agentType == "Prey" and i == idx:
                 Q_val = v.data.numpy()
-            move_idx = np.argmax(pi)
-            prey_moves.append(self.env.actions[state[1][i]][move_idx])
+            prey_moves.append(pi)
         return [predator_moves, prey_moves], Q_val
 
     def one_hot_state(self, state):
-        temp_state = np.zeors([self.env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
+        temp_state = np.zeros([self.env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
         for i in range(len(state[0])):
-            temp_state[state[0][i]][i] = 1.0
+            if state[0][i] != -1:
+                temp_state[state[0][i]][i] = 1.0
         for i in range(len(state[1])):
-            temp_state[state[1][i]][len(state[0]) + i] = 1.0
+            if state[1][i] != -1:
+                temp_state[state[1][i]][len(state[0]) + i] = 1.0
         return temp_state
 
 
@@ -234,8 +263,13 @@ class SuperMCTS:
             self.mcts_list_prey.append(MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Prey", i))
         self.move_threshold = MOVE_THRESHOLD
 
-    def progress(self):
-        while not self.root.is_done():
+    def progress(self, move_limit):
+        progression = []
+        progression.append(self.root.state)
+        poch = 0
+        while not self.root.is_done("Super", -1) and poch<move_limit:
+            print(poch)
+            poch = poch + 1
             # ~~~ dirch noise left
             for i in range(len(self.mcts_list_predator)):
                 self.mcts_list_predator[i].root = MCTSNode(self.root.state, self.env,
@@ -248,42 +282,50 @@ class SuperMCTS:
             # chalaite thako sim bar
             for sim in range(self.num_simulations):
                 for i in range(len(self.mcts_list_predator)):
-                    self.mcts_list_predator[i].search_tree()
+                    temp_root = self.mcts_list_predator[i].root
+                    self.mcts_list_predator[i].tree_search()
+                    self.mcts_list_predator[i].root = temp_root
                 for i in range(len(self.mcts_list_prey)):
                     if self.root.state[1][i] != -1:
-                        self.mcts_list_prey[i].search_tree()
+                        temp_root = self.mcts_list_prey[i].root
+                        self.mcts_list_prey[i].tree_search()
+                        self.mcts_list_prey[i].root = temp_root
 
             # action niye kochlakochli
-            new_state = self.root.state
+            new_predator_actions = []
+            for i in range(len(self.mcts_list_predator)):
+                move, probs = self.mcts_list_predator[i].pick_action()
+                new_predator_actions.append(move)
+                self.sts_predator[self.root.state[0][i]].append(self.root.state)
+                self.searches_pi_predator[self.root.state[0][i]].append(probs)
+                self.moves_curr_predator[self.root.state[0][i]].append(self.root.depth)
+            new_prey_actions = []
             for i in range(len(self.mcts_list_prey)):
                 if self.root.state[1][i] != -1:
-                    move, probs = self.mcts_list_prey[i].pich_action()
-                    new_state = self.env.next_state(new_state, "Prey", i, move)
+                    move, probs = self.mcts_list_prey[i].pick_action()
+                    new_prey_actions.append(move)
                     self.sts_prey[self.root.state[1][i]].append(self.root.state)
                     self.searches_pi_prey[self.root.state[1][i]].append(probs)
                     self.moves_curr_prey[self.root.state[1][i]].append(self.root.depth)
                     self.idx_prey[self.root.state[1][i]].append(i)
-            for i in range(len(self.mcts_list_predator)):
-                move, probs = self.mcts_list_predator[i].pick_action()
-                new_state = self.env.next_state(new_state, "Predator", i, move)
-                self.sts_predator[self.root.state[0][i]].append(self.root.state)
-                self.searches_pi_predator[self.root.state[0][i]].append(probs)
-                self.moves_curr_predator[self.root.state[0][i]].append(self.root.depth)
+            new_state = self.env.next_state(self.root.state, [new_predator_actions, new_prey_actions])
 
             self.root = MCTSNode(new_state, self.env)
+            progression.append(self.root.state)
 
         for node in range(self.env.n_nodes):
             for state in self.sts_predator[node]:
                 self.z_val_predator[node].append(self.env.get_return(self.root.state, "Predator", 0, state))
-            for state, i in enumerate(self.sts_prey[node]):
+            for i, state in enumerate(self.sts_prey[node]):
                 self.z_val_prey[node].append(
                     self.env.get_return(self.root.state, "Prey", self.idx_prey[node][i], state))
+        return progression
 
 
-def execute_episode(predator_netw, prey_netw, backbone, num_simulations, env):
+def execute_episode(predator_netw, prey_netw, backbone, num_simulations, env, move_limit = 10):
     mcts = SuperMCTS(predator_netw, prey_netw, backbone, env, num_simulations)
 
     mcts.initialize_search()
-    mcts.progress()
+    progression = mcts.progress(move_limit)
 
-    return mcts.searches_pi_predator, mcts.searches_pi_prey, mcts.sts_predator, mcts.sts_prey, mcts.z_val_predator, mcts.z_val_prey, mcts.moves_curr_predator, mcts.moves_curr_prey
+    return mcts.searches_pi_predator, mcts.searches_pi_prey, mcts.sts_predator, mcts.sts_prey, mcts.z_val_predator, mcts.z_val_prey, mcts.moves_curr_predator, mcts.moves_curr_prey, progression
