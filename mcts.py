@@ -264,11 +264,9 @@ class SuperMCTS:
         self.move_threshold = MOVE_THRESHOLD
 
     def progress(self, move_limit):
-        progression = []
-        progression.append(self.root.state)
+        progression = [self.root.state]
         poch = 0
         while not self.root.is_done("Super", -1) and poch<move_limit:
-            print(poch)
             poch = poch + 1
             # ~~~ dirch noise left
             for i in range(len(self.mcts_list_predator)):
@@ -296,7 +294,9 @@ class SuperMCTS:
             for i in range(len(self.mcts_list_predator)):
                 move, probs = self.mcts_list_predator[i].pick_action()
                 new_predator_actions.append(move)
-                self.sts_predator[self.root.state[0][i]].append(self.root.state)
+                if poch == 1:
+                    print("pd move ", i, self.root.state[0][i], probs, self.mcts_list_predator[i].root.child_prior)
+                self.sts_predator[self.root.state[0][i]].append(self.mcts_list_predator[i].one_hot_state(self.root.state))
                 self.searches_pi_predator[self.root.state[0][i]].append(probs)
                 self.moves_curr_predator[self.root.state[0][i]].append(self.root.depth)
             new_prey_actions = []
@@ -304,7 +304,10 @@ class SuperMCTS:
                 if self.root.state[1][i] != -1:
                     move, probs = self.mcts_list_prey[i].pick_action()
                     new_prey_actions.append(move)
-                    self.sts_prey[self.root.state[1][i]].append(self.root.state)
+                    if poch == 1:
+                        print("pr move ", i, self.root.state[1][i], probs,
+                              self.mcts_list_prey[i].root.child_prior)
+                    self.sts_prey[self.root.state[1][i]].append(self.mcts_list_prey[i].one_hot_state(self.root.state))
                     self.searches_pi_prey[self.root.state[1][i]].append(probs)
                     self.moves_curr_prey[self.root.state[1][i]].append(self.root.depth)
                     self.idx_prey[self.root.state[1][i]].append(i)

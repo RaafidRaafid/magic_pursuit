@@ -33,7 +33,7 @@ class PredictionTrainer:
                 except AttributeError as e:
                     self.getBack(n[0])
 
-    def train(self, states, moves, search_pis, returns):
+    def train(self, states, search_pis, returns, moves):
         adj = torch.FloatTensor(self.env.adj)
         self.optimizer.zero_grad()
 
@@ -42,7 +42,7 @@ class PredictionTrainer:
         rewards = []
 
         for state in states:
-            feat_mat = self.backbone(torch.FloatTensor(state, adj))
+            feat_mat = self.backbone.step_model(torch.FloatTensor(state))
             # ~~~ Come back after figuring out move incorporation
             logit, y, z = self.step_model(feat_mat, moves)
             logits.append(logit)

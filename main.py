@@ -4,6 +4,7 @@ from trainer import *
 from NN import *
 from replay_memory import ReplayMemory
 from mcts import *
+import random
 
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -21,7 +22,7 @@ if __name__ == '__main__':
         return G
 
 
-    def show_graph(graph,state, i):
+    def show_graph(graph, state, i):
         color_map = ["yellow"] * graph.number_of_nodes()
         for idx in state[0]:
             color_map[idx] = "red"
@@ -32,15 +33,6 @@ if __name__ == '__main__':
         nx.draw_networkx(graph, node_color=color_map)
         plt.savefig('step' + str(i) + '.png')
         plt.show()
-
-
-    def one_hot_state(env, state):
-        temp_state = np.zeors([env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
-        for i in range(len(state[0])):
-            temp_state[state[0][i]][i] = 1.0
-        for i in range(len(state[1])):
-            temp_state[state[1][i]][len(state[0]) + i] = 1.0
-        return temp_state
 
 
     env = gameEnv(0)
@@ -54,12 +46,54 @@ if __name__ == '__main__':
         trainer_predator.append(PredictionTrainer(lambda: PredictionNN(nPass, env.degree[i]), backbone, env))
         trainer_prey.append(PredictionTrainer(lambda: PredictionNN(nPass, env.degree[i]), backbone, env))
 
-    searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
-        trainer_predator, trainer_prey, backbone, 500, env)
+    mem_predator = []
+    mem_prey = []
+    for i in range(env.n_nodes):
+        mem_predator.append(ReplayMemory(200, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
+                                               "pi": [env.degree[i]], "z": [], "moves_left": []}))
+        mem_prey.append(ReplayMemory(200, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
+                                           "pi": [env.degree[i]], "z": [], "moves_left": []}))
 
-    graph = make_graph(env.adj)
-    for i, val in enumerate(progression):
-        print(val)
-        show_graph(graph, val, i)
+    # log = open("log.txt", "w+")
+    for epoch in range(30):
+        env_id = random.randint(0, 4)
+        env = gameEnv(env_id)
+        # print("epoch env", epoch, env_id)
+        # env = gameEnv(0)
 
+        searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
+            trainer_predator, trainer_prey, backbone, 500, env)
+
+        # for val in progression:
+        #     print(val)
+        #     log.write(str(val) + "\n")
+
+        for i in range(env.n_nodes):
+            mem_predator[i].add_all({"sts": sts_predator[i], "pi": searches_pi_predator[i], "z": z_val_predator[i],
+                                     "moves_left": moves_curr_predator[i]})
+            mem_prey[i].add_all(
+                {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
+            # print("count ", i, mem_predator[i].count, mem_prey[i].count)
+            # log.write("count " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
+
+        # train
+        for i in range(env.n_nodes):
+            print("node ", i)
+            # log.write("node " + str(i) + "\n")
+            if mem_predator[i].count > 0:
+                batch = mem_predator[i].get_minibatch()
+                lossP, lossV = trainer_predator[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
+                # print("predator ====>", lossP, lossV)
+                # log.write("predator ====>" + str(lossP) + str(lossV) + "\n")
+            if mem_prey[i].count > 0:
+                batch = mem_prey[i].get_minibatch()
+                lossP, lossV = trainer_prey[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
+                # print("preya ====>", lossP, lossV)
+                # log.write("prey ====>" + str(lossP) + str(lossV) + "\n")
+
+    # graph = make_graph(env.adj)
+    # for i, val in enumerate(progression):
+    #     print(val)
+    #     show_graph(graph, val, i)
+    # log.close()
     print("shofol")
