@@ -5,6 +5,11 @@ import torch.nn.functional as F
 from environment import gameEnv
 
 
+if torch.cuda.is_available():
+    device = "cuda:0"
+else:
+    device = "cpu"
+
 class BackboneTrainer:
     def __init__(self, NN):
         self.step_model = NN()
@@ -34,7 +39,6 @@ class PredictionTrainer:
                     self.getBack(n[0])
 
     def train(self, states, search_pis, returns, moves):
-        adj = torch.FloatTensor(self.env.adj)
         self.optimizer.zero_grad()
 
         logits = []
@@ -42,7 +46,7 @@ class PredictionTrainer:
         rewards = []
 
         for state in states:
-            feat_mat = self.backbone.step_model(torch.FloatTensor(state))
+            feat_mat = self.backbone.step_model(torch.FloatTensor(state).to(device))
             # ~~~ Come back after figuring out move incorporation
             logit, y, z = self.step_model(feat_mat, moves)
             logits.append(logit)
@@ -56,8 +60,8 @@ class PredictionTrainer:
 
         logsoftmax = nn.LogSoftmax(dim=1)
 
-        search_pis = torch.FloatTensor(search_pis)
-        returns = torch.FloatTensor(returns)
+        search_pis = torch.FloatTensor(search_pis).to(device)
+        returns = torch.FloatTensor(returns).to(device)
         loss_policy = torch.mean(torch.sum(-search_pis * logsoftmax(logits), dim=1))
         # ~~~ Again, check out after reward
         loss_reward = self.value_criterion(rewards, returns.view(returns.size()[0], 1))

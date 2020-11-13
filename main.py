@@ -55,10 +55,10 @@ if __name__ == '__main__':
                                            "pi": [env.degree[i]], "z": [], "moves_left": []}))
 
     # log = open("log.txt", "w+")
-    for epoch in range(30):
-        env_id = random.randint(0, 4)
+    for epoch in range(50):
+        env_id = random.randint(0, 9)
         env = gameEnv(env_id)
-        # print("epoch env", epoch, env_id)
+        print("epoch env", epoch, env_id)
         # env = gameEnv(0)
 
         searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
@@ -68,28 +68,29 @@ if __name__ == '__main__':
         #     print(val)
         #     log.write(str(val) + "\n")
 
+        # save and traing
         for i in range(env.n_nodes):
             mem_predator[i].add_all({"sts": sts_predator[i], "pi": searches_pi_predator[i], "z": z_val_predator[i],
                                      "moves_left": moves_curr_predator[i]})
             mem_prey[i].add_all(
                 {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
-            # print("count ", i, mem_predator[i].count, mem_prey[i].count)
+
+            print("count ", i, mem_predator[i].count, mem_prey[i].count)
             # log.write("count " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
 
-        # train
-        for i in range(env.n_nodes):
-            print("node ", i)
-            # log.write("node " + str(i) + "\n")
-            if mem_predator[i].count > 0:
+            if mem_predator[i].count > 8:
                 batch = mem_predator[i].get_minibatch()
                 lossP, lossV = trainer_predator[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                # print("predator ====>", lossP, lossV)
+                print("predator ====>", lossP.data(), lossV.data())
                 # log.write("predator ====>" + str(lossP) + str(lossV) + "\n")
-            if mem_prey[i].count > 0:
+
+
+            if mem_prey[i].count > 8:
                 batch = mem_prey[i].get_minibatch()
                 lossP, lossV = trainer_prey[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                # print("preya ====>", lossP, lossV)
+                print("preya ====>", lossP.data(), lossV.data())
                 # log.write("prey ====>" + str(lossP) + str(lossV) + "\n")
+
 
     # graph = make_graph(env.adj)
     # for i, val in enumerate(progression):
