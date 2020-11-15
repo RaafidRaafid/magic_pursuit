@@ -39,7 +39,7 @@ def generate_laplacian(A):
     A = torch.FloatTensor(A)
     A = A.to(device)
     N = A.shape[0]
-    I = torch.eye(N)
+    I = torch.eye(N).to(device)
     A_hat = A
     # ~~~ To increase self importance
     # A_hat = A + I
@@ -75,11 +75,6 @@ class BackboneNN(Module):
         else:
             self.laplacian = generate_laplacian(adj)
 
-        if torch.cuda.is_available():
-            self.device = "cuda:0"
-        else:
-            self.device = "cpu"
-
     def forward(self, x):
         x = self.gconv([x, self.laplacian])[0]
         return x
@@ -87,7 +82,7 @@ class BackboneNN(Module):
     def step(self, x):
         x = torch.FloatTensor(x)
         x = x.to(device)
-        return self.forward(x)
+        return self.forward(x).to(device)
 
 
 class PredictionNN(Module):
@@ -114,11 +109,6 @@ class PredictionNN(Module):
         self.fcPolicy = nn.Sequential(*fcPolicy)
         self.fcQ = nn.Sequential(*fcQ)
 
-        if torch.cuda.is_available():
-            self.device = "cuda:0"
-        else:
-            self.device = "cpu"
-
     def forward(self, x, depth):
 
         # ~~~ add depth
@@ -132,7 +122,7 @@ class PredictionNN(Module):
         return Policy, softmax(Policy), Q
 
     def step(self, x, depth):
-        x = torch.FloatTensor(x)
+        # x = torch.FloatTensor(x)
         x = x.to(device)
         _, pi, Q = self.forward(x, depth)
         return pi, Q[0]

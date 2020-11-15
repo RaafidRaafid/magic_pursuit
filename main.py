@@ -75,20 +75,20 @@ if __name__ == '__main__':
             mem_prey[i].add_all(
                 {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
 
-            print("count ", i, mem_predator[i].count, mem_prey[i].count)
+            # print("count ", i, mem_predator[i].count, mem_prey[i].count)
             # log.write("count " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
 
-            if mem_predator[i].count > 8:
+            if mem_predator[i].count > 10:
                 batch = mem_predator[i].get_minibatch()
                 lossP, lossV = trainer_predator[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("predator ====>", lossP.data(), lossV.data())
+                # print("predator ====>", lossP, lossV)
                 # log.write("predator ====>" + str(lossP) + str(lossV) + "\n")
 
 
-            if mem_prey[i].count > 8:
+            if mem_prey[i].count > 10:
                 batch = mem_prey[i].get_minibatch()
                 lossP, lossV = trainer_prey[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("preya ====>", lossP.data(), lossV.data())
+                # print("preya ====>", lossP, lossV)
                 # log.write("prey ====>" + str(lossP) + str(lossV) + "\n")
 
 

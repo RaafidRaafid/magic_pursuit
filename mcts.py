@@ -195,18 +195,18 @@ class MCTS:
         Q_val = None
         for i in range(len(state[0])):
             pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.numpy()
+            pi = pi.data.cpu().numpy()
             if agentType == "Predator" and i == idx:
-                Q_val = v.data.numpy()
+                Q_val = v.data.cpu().numpy()
             predator_moves.append(pi)
         for i in range(len(state[1])):
             if state[1][i] == -1:
                 prey_moves.append([])
                 continue
             pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.numpy()
+            pi = pi.data.cpu().numpy()
             if agentType == "Prey" and i == idx:
-                Q_val = v.data.numpy()
+                Q_val = v.data.cpu().numpy()
             prey_moves.append(pi)
         return [predator_moves, prey_moves], Q_val
 
@@ -294,8 +294,8 @@ class SuperMCTS:
             for i in range(len(self.mcts_list_predator)):
                 move, probs = self.mcts_list_predator[i].pick_action()
                 new_predator_actions.append(move)
-                if poch == 1:
-                    print("pd move ", i, self.root.state[0][i], probs, self.mcts_list_predator[i].root.child_prior)
+                # if poch == 1:
+                #     print("pd move ", i, self.root.state[0][i], probs, self.mcts_list_predator[i].root.child_prior)
                 self.sts_predator[self.root.state[0][i]].append(self.mcts_list_predator[i].one_hot_state(self.root.state))
                 self.searches_pi_predator[self.root.state[0][i]].append(probs)
                 self.moves_curr_predator[self.root.state[0][i]].append(self.root.depth)
@@ -304,9 +304,9 @@ class SuperMCTS:
                 if self.root.state[1][i] != -1:
                     move, probs = self.mcts_list_prey[i].pick_action()
                     new_prey_actions.append(move)
-                    if poch == 1:
-                        print("pr move ", i, self.root.state[1][i], probs,
-                              self.mcts_list_prey[i].root.child_prior)
+                    # if poch == 1:
+                    #     print("pr move ", i, self.root.state[1][i], probs,
+                    #           self.mcts_list_prey[i].root.child_prior)
                     self.sts_prey[self.root.state[1][i]].append(self.mcts_list_prey[i].one_hot_state(self.root.state))
                     self.searches_pi_prey[self.root.state[1][i]].append(probs)
                     self.moves_curr_prey[self.root.state[1][i]].append(self.root.depth)
