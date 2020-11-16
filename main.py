@@ -55,18 +55,18 @@ if __name__ == '__main__':
                                            "pi": [env.degree[i]], "z": [], "moves_left": []}))
 
     # log = open("log.txt", "w+")
-    for epoch in range(50):
+    for epoch in range(20):
         env_id = random.randint(0, 9)
+        # env_id = 0
         env = gameEnv(env_id)
         print("epoch env", epoch, env_id)
-        # env = gameEnv(0)
 
         searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
             trainer_predator, trainer_prey, backbone, 500, env)
 
-        # for val in progression:
-        #     print(val)
-        #     log.write(str(val) + "\n")
+        for val in progression:
+            print("ugala bugala", val)
+            # log.write(str(val) + "\n")
 
         # save and traing
         for i in range(env.n_nodes):
@@ -76,19 +76,19 @@ if __name__ == '__main__':
                 {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
 
             print("count ", i, mem_predator[i].count, mem_prey[i].count)
-            # log.write("count " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
+            # log.write(" cscount " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
 
             if mem_predator[i].count > 8:
                 batch = mem_predator[i].get_minibatch()
                 lossP, lossV = trainer_predator[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("predator ====>", lossP.data(), lossV.data())
+                print("predator ====>", lossP.cpu(), lossV.cpu())
                 # log.write("predator ====>" + str(lossP) + str(lossV) + "\n")
 
 
             if mem_prey[i].count > 8:
                 batch = mem_prey[i].get_minibatch()
                 lossP, lossV = trainer_prey[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("preya ====>", lossP.data(), lossV.data())
+                print("preya ====>", lossP.cpu(), lossV.cpu())
                 # log.write("prey ====>" + str(lossP) + str(lossV) + "\n")
 
 
