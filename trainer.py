@@ -13,11 +13,13 @@ else:
 class BackboneTrainer:
     def __init__(self, NN):
         self.step_model = NN()
+        self.step_model.to(device)
 
 
 class PredictionTrainer:
     def __init__(self, PredictionNN, backbone, env, learning_rate=0.01):
         self.step_model = PredictionNN()
+        self.step_model.to(device)
         self.backbone = backbone
         self.env = env
         self.learning_rate = learning_rate

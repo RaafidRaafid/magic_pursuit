@@ -132,7 +132,7 @@ class PredictionNN(Module):
         return Policy, softmax(Policy), Q
 
     def step(self, x, depth):
-        x = torch.FloatTensor(x)
+        # x = torch.FloatTensor(x)
         x = x.to(device)
         _, pi, Q = self.forward(x, depth)
         return pi, Q[0]

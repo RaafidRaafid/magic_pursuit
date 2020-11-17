@@ -199,19 +199,19 @@ class PdMCTS:
         Q_val = None
         for i in range(len(state[0])):
             pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.numpy()
+            pi = pi.data.cpu().numpy()
             # ~~~ how to calculate the Q value fo this
             if agentType == "Predator":
-                Q_val = v.data.numpy()
+                Q_val = v.data.cpu().numpy()
             predator_moves.append(pi)
         for i in range(len(state[1])):
             if state[1][i] == -1:
                 prey_moves.append([])
                 continue
             pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.numpy()
+            pi = pi.data.cpu().numpy()
             if agentType == "Prey" and i == idx:
-                Q_val = v.data.numpy()
+                Q_val = v.data.cpu().numpy()
             prey_moves.append(pi)
         return [predator_moves, prey_moves], Q_val
 
