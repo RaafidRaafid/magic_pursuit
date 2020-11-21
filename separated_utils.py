@@ -4,16 +4,16 @@ import numpy as np
 
 finalize = True
 cases = 10
-nodes = 25
-pd = 5
-pr = 5
+nodes = 15
+pd = 3
+pr = 2
 
 deg = []
 for i in range(nodes):
-    deg.append(np.random.randint(2, pd))
+    deg.append(np.random.randint(2, pd+1))
 if sum(deg) % 2 == 1:
-    max = max(deg)
-    max_index = deg.index(max)
+    maxx = max(deg)
+    max_index = deg.index(maxx)
     deg[max_index] = deg[max_index] - 1
 G = nx.random_degree_sequence_graph(deg, seed=42)
 adj = np.zeros([nodes, nodes])

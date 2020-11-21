@@ -108,9 +108,9 @@ class MCTSNode:
         self.W += value
         if self.parent is None or self is up_to:
             return
-        self.parent.backup_value(value, up_to)
+        # self.parent.backup_value(value, up_to)
         # self.parent.backup_value(value*1.003, up_to)
-        # self.parent.backup_value(value*0.997, up_to)
+        self.parent.backup_value(value*0.97, up_to)
 
 
 class PdMCTS:
@@ -129,12 +129,15 @@ class PdMCTS:
             failsafe += 1
 
             current = self.root
+            alu = False
             while True:
                 current.N += 1
                 if not current.is_expanded:
                     break
                 if current.is_done(self.agentType, self.idx):
                     break
+                if alu:
+                    print("i want to die")
                 moves = self.find_gibbs_actions(current.state, current.select_moves_from_pi())
 
                 # print(len(current.child_N))
@@ -146,6 +149,8 @@ class PdMCTS:
                 if str(moves) not in current.children:
                     current.create_child(moves)
                 best_move = np.argmax(current.child_action_score)
+                # if current.depth == 0:
+                #     print("gelam======>", current.idx_action[best_move], current.child_N.values(), current.child_action_score)
                 current = current.children[current.idx_action[best_move]]
 
             # leaf paoar por
@@ -155,6 +160,7 @@ class PdMCTS:
                     score = self.env.get_return(leaf.state, self.agentType, self.idx, self.root.state)
                 else:
                     score = self.env.get_return(leaf.state, self.agentType, self.idx)
+                # print("bhauu ", score, leaf.depth)
                 leaf.backup_value(score, up_to=self.root)
                 # while self.root.parent is not None:
                 #     self.root = self.root.parent
@@ -164,10 +170,12 @@ class PdMCTS:
                                                                    self.agentType, self.idx)
 
             leaf.backup_value(Q_val, up_to=self.root)
+            # print(Q_val, leaf.depth, leaf.state)
             leaf.is_expanded = True
             # while self.root.parent is not None:
             #     self.root = self.root.parent
             break
+        # print("pore", len(self.root.children), leaf.depth)
 
     def pick_action(self, idx):
         # the idea is to pick the best 'move' after the search and send it over
@@ -227,11 +235,13 @@ class PdMCTS:
 
     def find_gibbs_actions(self, state, predicted_played_moves):
         limit = 10
+        todo = 'boltzman'
 
         actions = predicted_played_moves
         for i in range(len(actions[0])):
             actions[0][i] = (self.root.state[0][i], self.root.state[0][i])
         omega_state = self.env.next_state(self.root.state, actions)
+        pr_moves = list(actions[1])
         for i in range(len(omega_state[1])):
             if omega_state[1][i] == -1:
                 actions[1][i] = (-1, -1)
@@ -244,15 +254,20 @@ class PdMCTS:
                 feat_mat = self.backbone.step_model.step(self.one_hot_state(curr_state))
                 probs, val = self.predator_netw[curr_state[0][i]].step_model.step(feat_mat, self.root.depth)
                 probs = probs.data.cpu().numpy()
-                for j in range(len(probs)):
-                    if j == 0:
-                        continue
-                    probs[j] = probs[j - 1] + probs[j]
-                selection = rd.random()
-                what = probs.searchsorted(selection)
-                move = self.env.actions[curr_state[0][i]][what]
-                actions[0][i] = move
-        return actions
+                if todo == "boltzman":
+                    for j in range(len(probs)):
+                        if j == 0:
+                            continue
+                        probs[j] = probs[j - 1] + probs[j]
+                    selection = rd.random()
+                    what = probs.searchsorted(selection)
+                    move = self.env.actions[curr_state[0][i]][what]
+                    actions[0][i] = move
+                elif todo == "greedy":
+                    what = np.argmax(probs)
+                    move = self.env.actions[curr_state[0][i]][what]
+                    actions[0][i] = move
+        return [actions[0], pr_moves]
 
 
 class PrMCTS:
@@ -315,7 +330,7 @@ class PrMCTS:
             if self.root.actions[i] in self.root.children:
                 self.root.child_N[i] = self.root.children[self.root.actions[i]].N
 
-        move_idx = np.argmax(self.root.child_N)
+        move_idx = np.argmax(np.array(list(self.root.child_N.values())))
         probs = np.array(list(self.root.child_N.values()))
         probs = probs / np.sum(probs)
         return self.root.idx_action[move_idx], probs
@@ -406,13 +421,15 @@ class SuperMCTS:
 
             # chalaite thako sim bar
             for sim in range(self.num_simulations):
-                self.mcts_predator.tree_search()
+                for mul in range(5):
+                    self.mcts_predator.tree_search()
                 for i in range(len(self.mcts_list_prey)):
                     if self.root.state[1][i] != -1:
                         self.mcts_list_prey[i].tree_search()
 
             # action niye kochlakochli
             new_predator_actions = []
+            # print(self.mcts_predator.root.child_action_score)
             print(len(self.mcts_predator.root.child_N))
             for i in range(len(self.root.state[0])):
                 state, move, probs = self.mcts_predator.pick_action(i)
@@ -424,6 +441,7 @@ class SuperMCTS:
             new_prey_actions = []
             for i in range(len(self.mcts_list_prey)):
                 if self.root.state[1][i] != -1:
+                    # print("pailam ", self.root.state[1][i], self.mcts_list_prey[i].root.child_action_score, self.mcts_list_prey[i].root.child_N)
                     move, probs = self.mcts_list_prey[i].pick_action()
                     new_prey_actions.append(move)
                     # if poch == 1:
