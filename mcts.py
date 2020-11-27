@@ -215,7 +215,10 @@ class C_MCTS:
         for i in range(len(state[0])):
             actions[0].append((state[0][i], state[0][i]))
         for i in range(len(state[1])):
-            actions[1].append((state[1][i], state[0][i]))
+            if state[1][i] == -1:
+                actions[1].append((-1, -1))
+            else:
+                actions[1].append((state[1][i], state[0][i]))
 
         if active == "Predator":
             for lim in range(limit):
@@ -245,6 +248,8 @@ class C_MCTS:
         else:
             for lim in range(limit):
                 for i in range(len(state[1])):
+                    if state[1][i] == -1:
+                        continue
                     actions[1][i] = (state[1][i], state[1][i])
                     mon = self.env.next_state(state, actions)
                     feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
@@ -538,19 +543,16 @@ class SuperMCTS:
                     self.mcts_list_prey[i].root = MCTSNode(self.root.state, self.env)
                     self.mcts_list_prey[i].root.depth = self.root.depth
 
-            print(self.mcts_predator.root.depth, "lol")
-
             # chalaite thako sim bar
             for sim in range(self.num_simulations):
-                # if (sim+1)%10 == 0:
-                #     print(sim)
+                if (sim+1)%10 == 0:
+                    print(sim)
                 for mul in range(3):
                     self.mcts_predator.tree_search()
                 for i in range(len(self.mcts_list_prey)):
                     if self.root.state[1][i] != -1:
                         self.mcts_list_prey[i].tree_search()
 
-            print(self.root.state)
             # action niye kochlakochli
             new_predator_actions = []
             # print(self.mcts_predator.root.child_action_score)

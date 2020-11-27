@@ -4,9 +4,9 @@ import numpy as np
 
 finalize = True
 cases = 10
-nodes = 15
-pd = 3
-pr = 2
+nodes = 25
+pd = 5
+pr = 4
 
 deg = []
 for i in range(nodes):

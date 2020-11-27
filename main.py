@@ -55,14 +55,14 @@ if __name__ == '__main__':
                                            "pi": [env.degree[i]], "z": [], "moves_left": []}))
 
     # log = open("log.txt", "w+")
-    for epoch in range(20):
+    for epoch in range(25):
         env_id = random.randint(0, 9)
         # env_id = 4
         env = gameEnv(env_id)
         print("epoch env", epoch, env_id)
 
         searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
-            trainer_predator, trainer_prey, backbone, 100, env)
+            trainer_predator, trainer_prey, backbone, 400, env)
 
         if epoch >= 0:
             # graph = make_graph(env.adj)
