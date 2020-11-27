@@ -1,3 +1,5 @@
+import copy
+
 import math
 import numpy as np
 import random as rd
@@ -11,7 +13,7 @@ MOVE_THRESHOLD = 0
 
 
 class MCTSNode:
-    def __init__(self, state, env, parent=None, predicted_moves=None, predicted_Q=None):
+    def __init__(self, state, env, parent=None, predicted_moves=None, predicted_Q=None, action_space_size=None):
         self.env = env
         if parent is None:
             self.depth = 0
@@ -91,6 +93,8 @@ class MCTSNode:
 
         if idx is None:
             action_immutable_str = str(actions)
+            if action_immutable_str in self.children:
+                return self.children[action_immutable_str]
             self.children[action_immutable_str] = MCTSNode(new_state, self.env, parent=self)
             self.child_N[action_immutable_str] = 0
             self.child_W[action_immutable_str] = 0
@@ -101,6 +105,8 @@ class MCTSNode:
             return self.children[action_immutable_str]
         else:
             action_immutable_str = actions[1][idx]
+            if action_immutable_str in self.children:
+                return self.children[action_immutable_str]
             self.children[action_immutable_str] = MCTSNode(new_state, self.env, parent=self)
             return self.children[action_immutable_str]
 
@@ -110,47 +116,33 @@ class MCTSNode:
             return
         # self.parent.backup_value(value, up_to)
         # self.parent.backup_value(value*1.003, up_to)
-        self.parent.backup_value(value*0.97, up_to)
+        self.parent.backup_value(value * 0.95, up_to)
 
 
-class PdMCTS:
-    def __init__(self, predator_netw, prey_netw, backbone, env, agentType, idx):
+class C_MCTS:
+    def __init__(self, predator_netw, prey_netw, backbone, env, agentType, idx, ex_fac):
         self.predator_netw = predator_netw
         self.prey_netw = prey_netw
         self.backbone = backbone
         self.env = env
         self.agentType = agentType
         self.idx = idx
+        self.ex_fac = ex_fac
         self.root = None
 
     def tree_search(self):
         failsafe = 0
-        while failsafe < 10:
+        while failsafe < 5:
             failsafe += 1
 
             current = self.root
-            alu = False
             while True:
                 current.N += 1
                 if not current.is_expanded:
                     break
                 if current.is_done(self.agentType, self.idx):
                     break
-                if alu:
-                    print("i want to die")
-                moves = self.find_gibbs_actions(current.state, current.select_moves_from_pi())
-
-                # print(len(current.child_N))
-                # if current.depth == 0:
-                #     for key in current.child_N:
-                #         print(key, current.child_N[key])
-                # print("-------------------")
-
-                if str(moves) not in current.children:
-                    current.create_child(moves)
                 best_move = np.argmax(current.child_action_score)
-                # if current.depth == 0:
-                #     print("gelam======>", current.idx_action[best_move], current.child_N.values(), current.child_action_score)
                 current = current.children[current.idx_action[best_move]]
 
             # leaf paoar por
@@ -162,28 +154,130 @@ class PdMCTS:
                     score = self.env.get_return(leaf.state, self.agentType, self.idx)
                 # print("bhauu ", score, leaf.depth)
                 leaf.backup_value(score, up_to=self.root)
-                # while self.root.parent is not None:
-                #     self.root = self.root.parent
                 continue
             # new node
-            leaf.predicted_moves, Q_val = self.predict_agent_moves(leaf.state, leaf.depth,
-                                                                   self.agentType, self.idx)
+            leaf_my_moves = []
+            leaf_opposition_moves = []
+            gorge = {}
+            if self.agentType == "Predator":
+                for num in range(self.ex_fac * 2):
+                    my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
+                    if str(my_moves) not in gorge:
+                        leaf_my_moves.append(my_moves)
+                        gorge[str(my_moves)] = 1.0
 
+                for num in range(self.ex_fac):
+                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey")
+                    if str(opposition_moves) not in gorge:
+                        leaf_opposition_moves.append(opposition_moves)
+                        gorge[str(opposition_moves)] = 1.0
+            else:
+                for num in range(self.ex_fac * 2):
+                    my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
+                    if str(my_moves) not in gorge:
+                        leaf_my_moves.append(my_moves)
+                        gorge[str(my_moves)] = 1.0
+
+                for num in range(self.ex_fac):
+                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator")
+                    if str(my_moves) not in gorge:
+                        leaf_opposition_moves.append(opposition_moves)
+                        gorge[str(opposition_moves)] = 1.0
+
+            leaf.action_space_size = (len(leaf_my_moves), len(leaf_opposition_moves))
             leaf.backup_value(Q_val, up_to=self.root)
-            # print(Q_val, leaf.depth, leaf.state)
+
+            for move1 in leaf_my_moves:
+                for move2 in leaf_opposition_moves:
+                    actions = [move1, move2]
+                    leaf.create_child(actions)
+
             leaf.is_expanded = True
-            # while self.root.parent is not None:
-            #     self.root = self.root.parent
             break
         # print("pore", len(self.root.children), leaf.depth)
 
+    def one_hot_state(self, state):
+        temp_state = np.zeros([self.env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
+        for i in range(len(state[0])):
+            if state[0][i] != -1:
+                temp_state[state[0][i]][i] = 1.0
+        for i in range(len(state[1])):
+            if state[1][i] != -1:
+                temp_state[state[1][i]][len(state[0]) + i] = 1.0
+        return temp_state
+
+    def find_gibbs_moves(self, state, active):
+        qval = 0.0
+        limit = 10
+        todo = 'boltzman'
+
+        actions = [[], []]
+        for i in range(len(state[0])):
+            actions[0].append((state[0][i], state[0][i]))
+        for i in range(len(state[1])):
+            actions[1].append((state[1][i], state[0][i]))
+
+        if active == "Predator":
+            for lim in range(limit):
+                for i in range(len(state[0])):
+                    actions[0][i] = (state[0][i], state[0][i])
+                    mon = self.env.next_state(state, actions)
+                    feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
+                    probs, val = self.predator_netw[mon[0][i]].step_model.step(feat_mat, self.root.depth)
+                    if lim == 0 and i == 0:
+                        qval = val.data.cpu().numpy()
+                    probs = probs.data.cpu().numpy()
+                    if todo == "boltzman":
+                        for j in range(len(probs)):
+                            if j == 0:
+                                continue
+                            probs[j] = probs[j - 1] + probs[j]
+                        selection = rd.random()
+                        what = probs.searchsorted(selection)
+                        move = self.env.actions[mon[0][i]][what]
+                        actions[0][i] = move
+                    elif todo == "greedy":
+                        what = np.argmax(probs)
+                        move = self.env.actions[mon[0][i]][what]
+                        actions[0][i] = move
+            return actions[0], qval
+
+        else:
+            for lim in range(limit):
+                for i in range(len(state[1])):
+                    actions[1][i] = (state[1][i], state[1][i])
+                    mon = self.env.next_state(state, actions)
+                    feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
+                    probs, val = self.prey_netw[mon[1][i]].step_model.step(feat_mat, self.root.depth)
+                    if lim == 0 and i == 0:
+                        qval = val.data.cpu().numpy()
+                    probs = probs.data.cpu().numpy()
+                    if todo == "boltzman":
+                        for j in range(len(probs)):
+                            if j == 0:
+                                continue
+                            probs[j] = probs[j - 1] + probs[j]
+                        selection = rd.random()
+                        what = probs.searchsorted(selection)
+                        move = self.env.actions[mon[1][i]][what]
+                        actions[1][i] = move
+                    elif todo == "greedy":
+                        what = np.argmax(probs)
+                        move = self.env.actions[mon[1][i]][what]
+                        actions[1][i] = move
+            return actions[1], qval
+
     def pick_action(self, idx):
         # the idea is to pick the best 'move' after the search and send it over
-        for i in range(len(self.root.actions)):
-            if self.root.actions[i] in self.root.children:
-                self.root.child_N[i] = self.root.children[self.root.actions[i]].N
+        for key in self.root.child_N:
+            self.root.child_N[key] = self.root.children[key].N
 
-        child_number = np.argmax(np.array(list(self.root.child_N.values())))
+        compressed = [0.0] * self.root.action_space_size[0]
+        pre = list(self.root.child_N.values())
+        for i in range(len(pre)):
+            compressed[int(i / self.root.action_space_size[1])] = compressed[int(i / self.root.action_space_size[1])] + pre[i]
+        child_number = np.argmax(np.array(compressed))
+        child_number = child_number * self.ex_fac
         child = self.root.children[self.root.idx_action[child_number]]
 
         # amar state
@@ -200,89 +294,21 @@ class PdMCTS:
 
         return state, (self.root.state[0][idx], child.state[0][idx]), probs
 
-    def predict_agent_moves(self, state, depth, agentType, idx):
-        feat_mat = self.backbone.step_model.step(self.one_hot_state(state))
-        predator_moves = []
-        prey_moves = []
-        Q_val = None
-        for i in range(len(state[0])):
-            pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.cpu().numpy()
-            # ~~~ how to calculate the Q value fo this
-            if agentType == "Predator":
-                Q_val = v.data.cpu().numpy()
-            predator_moves.append(pi)
-        for i in range(len(state[1])):
-            if state[1][i] == -1:
-                prey_moves.append([])
-                continue
-            pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.cpu().numpy()
-            if agentType == "Prey" and i == idx:
-                Q_val = v.data.cpu().numpy()
-            prey_moves.append(pi)
-        return [predator_moves, prey_moves], Q_val
 
-    def one_hot_state(self, state):
-        temp_state = np.zeros([self.env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
-        for i in range(len(state[0])):
-            if state[0][i] != -1:
-                temp_state[state[0][i]][i] = 1.0
-        for i in range(len(state[1])):
-            if state[1][i] != -1:
-                temp_state[state[1][i]][len(state[0]) + i] = 1.0
-        return temp_state
-
-    def find_gibbs_actions(self, state, predicted_played_moves):
-        limit = 10
-        todo = 'boltzman'
-
-        actions = predicted_played_moves
-        for i in range(len(actions[0])):
-            actions[0][i] = (self.root.state[0][i], self.root.state[0][i])
-        omega_state = self.env.next_state(self.root.state, actions)
-        pr_moves = list(actions[1])
-        for i in range(len(omega_state[1])):
-            if omega_state[1][i] == -1:
-                actions[1][i] = (-1, -1)
-            actions[1][i] = (omega_state[1][i], omega_state[1][i])
-
-        for it in range(limit):
-            for i in range(len(omega_state[0])):
-                actions[0][i] = (omega_state[0][i], omega_state[0][i])
-                curr_state = self.env.next_state(omega_state, actions)
-                feat_mat = self.backbone.step_model.step(self.one_hot_state(curr_state))
-                probs, val = self.predator_netw[curr_state[0][i]].step_model.step(feat_mat, self.root.depth)
-                probs = probs.data.cpu().numpy()
-                if todo == "boltzman":
-                    for j in range(len(probs)):
-                        if j == 0:
-                            continue
-                        probs[j] = probs[j - 1] + probs[j]
-                    selection = rd.random()
-                    what = probs.searchsorted(selection)
-                    move = self.env.actions[curr_state[0][i]][what]
-                    actions[0][i] = move
-                elif todo == "greedy":
-                    what = np.argmax(probs)
-                    move = self.env.actions[curr_state[0][i]][what]
-                    actions[0][i] = move
-        return [actions[0], pr_moves]
-
-
-class PrMCTS:
-    def __init__(self, predator_netw, prey_netw, backbone, env, agentType, idx):
+class DC_MCTS:
+    def __init__(self, predator_netw, prey_netw, backbone, env, agentType, idx, ex_fac):
         self.predator_netw = predator_netw
         self.prey_netw = prey_netw
         self.backbone = backbone
         self.env = env
         self.agentType = agentType
         self.idx = idx
+        self.ex_fac = ex_fac
         self.root = None
 
     def tree_search(self):
         failsafe = 0
-        while failsafe < 10:
+        while failsafe < 5:
             failsafe += 1
 
             current = self.root
@@ -303,59 +329,66 @@ class PrMCTS:
                 else:
                     score = self.env.get_return(leaf.state, self.agentType, self.idx)
                 leaf.backup_value(score, up_to=self.root)
-                # while self.root.parent is not None:
-                #     self.root = self.root.parent
                 continue
             # new node
-            leaf.predicted_moves, Q_val = self.predict_agent_moves(leaf.state, leaf.depth,
-                                                                   self.agentType, self.idx)
-            for i, act in enumerate(leaf.env.actions[leaf.state[1][self.idx]]):
-                leaf.child_prior[act] = leaf.predicted_moves[1][self.idx][i]
-                leaf.child_N[act] = 0
-                leaf.child_W[act] = 0
-                leaf.action_idx[act] = i
-                leaf.idx_action[i] = act
-                temp_moves = leaf.select_moves_from_pi()
-                temp_moves[1][self.idx] = act
-                leaf.create_child(temp_moves, self.idx)
+            predicted_moves, Q_val = self.predict_agent_moves(leaf.state, leaf.depth,
+                                                              self.agentType, self.idx)
+
+            leaf_opposition_moves = []
+            gorge = {}
+            if self.agentType == "Predator":
+                for num in range(self.ex_fac):
+                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey")
+                    if str(opposition_moves) not in gorge:
+                        leaf_opposition_moves.append(opposition_moves)
+                        gorge[str(opposition_moves)] = 1.0
+            else:
+                for num in range(self.ex_fac):
+                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator")
+                    if str(opposition_moves) not in gorge:
+                        leaf_opposition_moves.append(opposition_moves)
+                        gorge[str(opposition_moves)] = 1.0
+
+            for move1 in predicted_moves:
+                for move2 in leaf_opposition_moves:
+                    leaf.create_child([move2, move1])
+
+            leaf.action_space_size = (len(predicted_moves), len(leaf_opposition_moves))
+
             leaf.backup_value(Q_val, up_to=self.root)
             leaf.is_expanded = True
-            # while self.root.parent is not None:
-            #     self.root = self.root.parent
             break
-
-    def pick_action(self):
-        # the idea is to pick the best 'move' after the search and send it over
-        for i in range(len(self.root.actions)):
-            if self.root.actions[i] in self.root.children:
-                self.root.child_N[i] = self.root.children[self.root.actions[i]].N
-
-        move_idx = np.argmax(np.array(list(self.root.child_N.values())))
-        probs = np.array(list(self.root.child_N.values()))
-        probs = probs / np.sum(probs)
-        return self.root.idx_action[move_idx], probs
 
     def predict_agent_moves(self, state, depth, agentType, idx):
         feat_mat = self.backbone.step_model.step(self.one_hot_state(state))
-        predator_moves = []
-        prey_moves = []
-        Q_val = None
-        for i in range(len(state[0])):
-            pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.cpu().numpy()
-            if agentType == "Predator" and i == idx:
-                Q_val = v.data.cpu().numpy()
-            predator_moves.append(pi)
-        for i in range(len(state[1])):
-            if state[1][i] == -1:
-                prey_moves.append([])
-                continue
-            pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
-            pi = pi.data.cpu().numpy()
-            if agentType == "Prey" and i == idx:
-                Q_val = v.data.cpu().numpy()
-            prey_moves.append(pi)
-        return [predator_moves, prey_moves], Q_val
+        actions = []
+        list_actions = []
+        qval = 0.0
+        if agentType == "Predator":
+            for i in range(len(state[0])):
+                pi, v = self.predator_netw[state[0][i]].step_model.step(feat_mat, depth)
+                pi = pi.data.cpu().numpy()
+                move_idx = np.argmax(pi)
+                actions.append(self.env.actions[state[0][i]][move_idx])
+                if i == idx:
+                    qval = v.data.cpu().numpy()
+
+            for act in enumerate(self.env.actions[state[0][idx]]):
+                actions[idx] = act
+                list_actions.append(list(actions))
+            return list_actions, qval
+        else:
+            for i in range(len(state[1])):
+                pi, v = self.prey_netw[state[1][i]].step_model.step(feat_mat, depth)
+                pi = pi.data.cpu().numpy()
+                move_idx = np.argmax(pi)
+                actions.append(self.env.actions[state[1][i]][move_idx])
+                if i == idx:
+                    qval = v.data.cpu().numpy()
+            for act in self.env.actions[state[1][idx]]:
+                actions[idx] = act
+                list_actions.append(list(actions))
+            return list_actions, qval
 
     def one_hot_state(self, state):
         temp_state = np.zeros([self.env.n_nodes, len(state[0]) + len(state[1])], dtype=float)
@@ -366,6 +399,89 @@ class PrMCTS:
             if state[1][i] != -1:
                 temp_state[state[1][i]][len(state[0]) + i] = 1.0
         return temp_state
+
+    def find_gibbs_moves(self, state, active):
+        qval = 0.0
+        limit = 10
+        todo = 'boltzman'
+
+        actions = [[], []]
+        for i in range(len(state[0])):
+            actions[0].append((state[0][i], state[0][i]))
+        for i in range(len(state[1])):
+            actions[1].append((state[1][i], state[0][i]))
+
+        if active == "Predator":
+            for lim in range(limit):
+                for i in range(len(state[0])):
+                    actions[0][i] = (state[0][i], state[0][i])
+                    mon = self.env.next_state(state, actions)
+                    feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
+                    probs, val = self.predator_netw[mon[0][i]].step_model.step(feat_mat, self.root.depth)
+                    if lim == 0 and i == 0:
+                        qval = val.data.cpu().numpy()
+                    probs = probs.data.cpu().numpy()
+                    if todo == "boltzman":
+                        for j in range(len(probs)):
+                            if j == 0:
+                                continue
+                            probs[j] = probs[j - 1] + probs[j]
+                        selection = rd.random()
+                        what = probs.searchsorted(selection)
+                        move = self.env.actions[mon[0][i]][what]
+                        actions[0][i] = move
+                    elif todo == "greedy":
+                        what = np.argmax(probs)
+                        move = self.env.actions[mon[0][i]][what]
+                        actions[0][i] = move
+            return actions[0], qval
+
+        else:
+            for lim in range(limit):
+                for i in range(len(state[1])):
+                    actions[1][i] = (state[1][i], state[1][i])
+                    mon = self.env.next_state(state, actions)
+                    feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
+                    probs, val = self.prey_netw[mon[1][i]].step_model.step(feat_mat, self.root.depth)
+                    if lim == 0 and i == 0:
+                        qval = val.data.cpu().numpy()
+                    probs = probs.data.cpu().numpy()
+                    if todo == "boltzman":
+                        for j in range(len(probs)):
+                            if j == 0:
+                                continue
+                            probs[j] = probs[j - 1] + probs[j]
+                        selection = rd.random()
+                        what = probs.searchsorted(selection)
+                        move = self.env.actions[mon[1][i]][what]
+                        actions[1][i] = move
+                    elif todo == "greedy":
+                        what = np.argmax(probs)
+                        move = self.env.actions[mon[1][i]][what]
+                        actions[1][i] = move
+            return actions[1], qval
+
+    def pick_action(self, idx):
+        # the idea is to pick the best 'move' after the search and send it over
+        for key in self.root.child_N:
+            self.root.child_N[key] = self.root.children[key].N
+
+        compressed = [0.0] * self.root.action_space_size[0]
+        pre = list(self.root.child_N.values())
+        for i in range(len(pre)):
+            compressed[int(i / self.root.action_space_size[1])] += pre[i]
+        compressed = np.array(compressed)
+        child_number = np.argmax(compressed)
+        child_number = child_number * self.ex_fac
+        child = self.root.children[self.root.idx_action[child_number]]
+
+        # amar state
+        probs = compressed / np.sum(compressed)
+
+        if self.agentType == "Predator":
+            return (self.root.state[0][idx], child.state[0][idx]), probs
+        else:
+            return (self.root.state[1][idx], child.state[1][idx]), probs
 
 
 class SuperMCTS:
@@ -403,9 +519,10 @@ class SuperMCTS:
         # ~~~ initialize root
         self.root = MCTSNode(self.env.init_state, self.env)
 
-        self.mcts_predator = PdMCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Predator", -1)
+        self.mcts_predator = C_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Predator", -1, 5)
         for i in range(len(self.env.init_state[1])):
-            self.mcts_list_prey.append(PrMCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Prey", i))
+            self.mcts_list_prey.append(
+                DC_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Prey", i, 5))
         self.move_threshold = MOVE_THRESHOLD
 
     def progress(self, move_limit):
@@ -415,22 +532,30 @@ class SuperMCTS:
             poch = poch + 1
             # ~~~ dirch noise left
             self.mcts_predator.root = MCTSNode(self.root.state, self.env)
+            self.mcts_predator.root.depth = self.root.depth
             for i in range(len(self.mcts_list_prey)):
                 if self.root.state[1][i] != -1:
                     self.mcts_list_prey[i].root = MCTSNode(self.root.state, self.env)
+                    self.mcts_list_prey[i].root.depth = self.root.depth
+
+            print(self.mcts_predator.root.depth, "lol")
 
             # chalaite thako sim bar
             for sim in range(self.num_simulations):
-                for mul in range(5):
+                # if (sim+1)%10 == 0:
+                #     print(sim)
+                for mul in range(3):
                     self.mcts_predator.tree_search()
                 for i in range(len(self.mcts_list_prey)):
                     if self.root.state[1][i] != -1:
                         self.mcts_list_prey[i].tree_search()
 
+            print(self.root.state)
             # action niye kochlakochli
             new_predator_actions = []
             # print(self.mcts_predator.root.child_action_score)
-            print(len(self.mcts_predator.root.child_N))
+            # print(len(self.mcts_predator.root.child_N))
+            # print(self.mcts_predator.root.child_N.values())
             for i in range(len(self.root.state[0])):
                 state, move, probs = self.mcts_predator.pick_action(i)
                 new_predator_actions.append(move)
@@ -441,8 +566,9 @@ class SuperMCTS:
             new_prey_actions = []
             for i in range(len(self.mcts_list_prey)):
                 if self.root.state[1][i] != -1:
-                    # print("pailam ", self.root.state[1][i], self.mcts_list_prey[i].root.child_action_score, self.mcts_list_prey[i].root.child_N)
-                    move, probs = self.mcts_list_prey[i].pick_action()
+                    # print("pailam ", self.root.state[1][i], self.mcts_list_prey[i].root.child_action_score,
+                    #       self.mcts_list_prey[i].root.child_N)
+                    move, probs = self.mcts_list_prey[i].pick_action(i)
                     new_prey_actions.append(move)
                     # if poch == 1:
                     #     print("pr move ", i, self.root.state[1][i], probs,
@@ -453,7 +579,7 @@ class SuperMCTS:
                     self.idx_prey[self.root.state[1][i]].append(i)
             new_state = self.env.next_state(self.root.state, [new_predator_actions, new_prey_actions])
 
-            self.root = MCTSNode(new_state, self.env)
+            self.root = MCTSNode(new_state, self.env, parent=self.root)
             progression.append(self.root.state)
 
         for node in range(self.env.n_nodes):
