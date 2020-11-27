@@ -277,7 +277,7 @@ class C_MCTS:
         for i in range(len(pre)):
             compressed[int(i / self.root.action_space_size[1])] = compressed[int(i / self.root.action_space_size[1])] + pre[i]
         child_number = np.argmax(np.array(compressed))
-        child_number = child_number * self.ex_fac
+        child_number = child_number * self.root.action_space_size[1]
         child = self.root.children[self.root.idx_action[child_number]]
 
         # amar state
@@ -472,7 +472,7 @@ class DC_MCTS:
             compressed[int(i / self.root.action_space_size[1])] += pre[i]
         compressed = np.array(compressed)
         child_number = np.argmax(compressed)
-        child_number = child_number * self.ex_fac
+        child_number = child_number * self.root.action_space_size[1]
         child = self.root.children[self.root.idx_action[child_number]]
 
         # amar state
