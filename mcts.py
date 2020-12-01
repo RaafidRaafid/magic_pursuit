@@ -1,8 +1,10 @@
 import copy
+import datetime
 
 import math
 import numpy as np
 import random as rd
+
 
 # exploration constants
 c_PUCT = 1.38
@@ -10,6 +12,7 @@ c_PUCT = 1.38
 D_NOISE_ALPHA = 0.1
 # Stochastic move number
 MOVE_THRESHOLD = 0
+
 
 
 class MCTSNode:
@@ -159,6 +162,7 @@ class C_MCTS:
             leaf_my_moves = []
             leaf_opposition_moves = []
             gorge = {}
+            Q_val = 0.0
             if self.agentType == "Predator":
                 for num in range(self.ex_fac * 2):
                     my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
@@ -172,7 +176,7 @@ class C_MCTS:
                         leaf_opposition_moves.append(opposition_moves)
                         gorge[str(opposition_moves)] = 1.0
             else:
-                for num in range(self.ex_fac * 2):
+                for num in range(self.ex_fac * 4):
                     my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
                     if str(my_moves) not in gorge:
                         leaf_my_moves.append(my_moves)
@@ -180,7 +184,7 @@ class C_MCTS:
 
                 for num in range(self.ex_fac):
                     opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator")
-                    if str(my_moves) not in gorge:
+                    if str(opposition_moves) not in gorge:
                         leaf_opposition_moves.append(opposition_moves)
                         gorge[str(opposition_moves)] = 1.0
 
@@ -208,7 +212,7 @@ class C_MCTS:
 
     def find_gibbs_moves(self, state, active):
         qval = 0.0
-        limit = 10
+        limit = 3
         todo = 'boltzman'
 
         actions = [[], []]
@@ -237,6 +241,8 @@ class C_MCTS:
                             probs[j] = probs[j - 1] + probs[j]
                         selection = rd.random()
                         what = probs.searchsorted(selection)
+                        if what >= len(self.env.actions[mon[0][i]]):
+                            print("I MESSED UP", what, len(self.env.actions[mon[0][i]]), probs)
                         move = self.env.actions[mon[0][i]][what]
                         actions[0][i] = move
                     elif todo == "greedy":
@@ -407,7 +413,7 @@ class DC_MCTS:
 
     def find_gibbs_moves(self, state, active):
         qval = 0.0
-        limit = 10
+        limit = 3
         todo = 'boltzman'
 
         actions = [[], []]
@@ -524,10 +530,10 @@ class SuperMCTS:
         # ~~~ initialize root
         self.root = MCTSNode(self.env.init_state, self.env)
 
-        self.mcts_predator = C_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Predator", -1, 5)
+        self.mcts_predator = C_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Predator", -1, 3)
         for i in range(len(self.env.init_state[1])):
             self.mcts_list_prey.append(
-                DC_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Prey", i, 5))
+                DC_MCTS(self.predator_netw, self.prey_netw, self.backbone, self.env, "Prey", i, 3))
         self.move_threshold = MOVE_THRESHOLD
 
     def progress(self, move_limit):
@@ -544,15 +550,20 @@ class SuperMCTS:
                     self.mcts_list_prey[i].root.depth = self.root.depth
 
             # chalaite thako sim bar
+            x = datetime.datetime.now()
             for sim in range(self.num_simulations):
-                if (sim+1)%10 == 0:
-                    print(sim)
                 for mul in range(3):
                     self.mcts_predator.tree_search()
+                    # print("dot")
                 for i in range(len(self.mcts_list_prey)):
                     if self.root.state[1][i] != -1:
                         self.mcts_list_prey[i].tree_search()
+                        # print("dot")
+                # y = datetime.datetime.now() - x
+                # print(sim, y.microseconds)
 
+            y = datetime.datetime.now() - x
+            print("-> ", poch, y.seconds)
             # action niye kochlakochli
             new_predator_actions = []
             # print(self.mcts_predator.root.child_action_score)
@@ -593,7 +604,7 @@ class SuperMCTS:
         return progression
 
 
-def execute_episode(predator_netw, prey_netw, backbone, num_simulations, env, move_limit=10):
+def execute_episode(predator_netw, prey_netw, backbone, num_simulations, env, move_limit=15):
     mcts = SuperMCTS(predator_netw, prey_netw, backbone, env, num_simulations)
 
     mcts.initialize_search()

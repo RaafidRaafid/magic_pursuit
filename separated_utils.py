@@ -4,7 +4,7 @@ import numpy as np
 
 finalize = True
 cases = 10
-nodes = 25
+nodes = 50
 pd = 5
 pr = 4
 

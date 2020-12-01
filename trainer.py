@@ -4,11 +4,11 @@ import numpy as np
 import torch.nn.functional as F
 from environment import gameEnv
 
-
 if torch.cuda.is_available():
     device = "cuda:0"
 else:
     device = "cpu"
+
 
 class BackboneTrainer:
     def __init__(self, NN):
@@ -47,10 +47,10 @@ class PredictionTrainer:
         policy = []
         rewards = []
 
-        for state in states:
+        for i, state in enumerate(states):
             feat_mat = self.backbone.step_model(torch.FloatTensor(state).to(device))
             # ~~~ Come back after figuring out move incorporation
-            logit, y, z = self.step_model(feat_mat, moves)
+            logit, y, z = self.step_model(feat_mat, moves[i])
             logits.append(logit)
             policy.append(y)
             rewards.append(z)

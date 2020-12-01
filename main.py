@@ -49,47 +49,68 @@ if __name__ == '__main__':
     mem_predator = []
     mem_prey = []
     for i in range(env.n_nodes):
-        mem_predator.append(ReplayMemory(200, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
+        mem_predator.append(ReplayMemory(50, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
                                                "pi": [env.degree[i]], "z": [], "moves_left": []}))
-        mem_prey.append(ReplayMemory(200, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
+        mem_prey.append(ReplayMemory(50, {"sts": [env.n_nodes, len(env.init_state[0]) + len(env.init_state[1])],
                                            "pi": [env.degree[i]], "z": [], "moves_left": []}))
 
     # log = open("log.txt", "w+")
-    for epoch in range(25):
-        env_id = random.randint(0, 9)
-        # env_id = 4
-        env = gameEnv(env_id)
-        print("epoch env", epoch, env_id)
+    # for jj in range(1):
+    #     for i in range(10):
+    #         env_id = i
+    #         env = gameEnv(env_id)
+    #         print("i env", i, env_id)
+    #
+    #         searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
+    #             trainer_predator, trainer_prey, backbone, 100, env)
+    #
+    #         for i, val in enumerate(progression):
+    #             print(val)
+    #
+    #         for i in range(env.n_nodes):
+    #             mem_predator[i].add_all({"sts": sts_predator[i], "pi": searches_pi_predator[i], "z": z_val_predator[i],
+    #                                      "moves_left": moves_curr_predator[i]})
+    #             mem_prey[i].add_all(
+    #                 {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i],
+    #                  "moves_left": moves_curr_prey[i]})
+    #
+    #             # print("count ", i, mem_predator[i].count, mem_prey[i].count)
 
-        searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
-            trainer_predator, trainer_prey, backbone, 400, env)
+    for epoch in range(5):
+        for env_id in range(10):
+            # env_id = 4
+            env = gameEnv(env_id)
+            print("epoch env", epoch, env_id)
 
-        if epoch >= 0:
-            # graph = make_graph(env.adj)
-            for i, val in enumerate(progression):
-                print(val)
-                # show_graph(graph, val, i)
+            searches_pi_predator, searches_pi_prey, sts_predator, sts_prey, z_val_predator, z_val_prey, moves_curr_predator, moves_curr_prey, progression = execute_episode(
+                trainer_predator, trainer_prey, backbone, 250, env)
 
-        # save and traing
-        for i in range(env.n_nodes):
-            mem_predator[i].add_all({"sts": sts_predator[i], "pi": searches_pi_predator[i], "z": z_val_predator[i],
-                                     "moves_left": moves_curr_predator[i]})
-            mem_prey[i].add_all(
-                {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
+            if epoch >= 0:
+                # graph = make_graph(env.adj)
+                for i, val in enumerate(progression):
+                    print(val)
+                    # show_graph(graph, val, i)
 
-            print("count ", i, mem_predator[i].count, mem_prey[i].count)
-            # log.write(" cscount " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
+            # save and traing
+            for i in range(env.n_nodes):
+                mem_predator[i].add_all({"sts": sts_predator[i], "pi": searches_pi_predator[i], "z": z_val_predator[i],
+                                         "moves_left": moves_curr_predator[i]})
+                mem_prey[i].add_all(
+                    {"sts": sts_prey[i], "pi": searches_pi_prey[i], "z": z_val_prey[i], "moves_left": moves_curr_prey[i]})
 
+                # print("count ", i, mem_predator[i].count, mem_prey[i].count)
+                # log.write(" cscount " + str(i) + " " + str(mem_predator[i].count) + " " + str(mem_prey[i].count) + "\n")
+        for i in range(5):
             if mem_predator[i].count > 4:
                 batch = mem_predator[i].get_minibatch()
                 lossP, lossV = trainer_predator[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("predator ====>", lossP.cpu(), lossV.cpu())
+                # print("predator ====>", lossP.cpu(), lossV.cpu())
                 # log.write("predator ====>" + str(lossP) + str(lossV) + "\n")
 
             if mem_prey[i].count > 4:
                 batch = mem_prey[i].get_minibatch()
                 lossP, lossV = trainer_prey[i].train(batch["sts"], batch["pi"], batch["z"], batch["moves_left"])
-                print("preya ====>", lossP.cpu(), lossV.cpu())
+                # print("preya ====>", lossP.cpu(), lossV.cpu())
                 # log.write("prey ====>" + str(lossP) + str(lossV) + "\n")
 
     # log.close()

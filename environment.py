@@ -43,7 +43,7 @@ class gameEnv(staticEnv):
     def is_done_state(state, step_idx):
         for i in range(len(state[1])):
             if state[1][i] != -1:
-                return step_idx >= 20
+                return step_idx >= 15
         return True
 
     @staticmethod

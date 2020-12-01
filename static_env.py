@@ -1,7 +1,7 @@
 class staticEnv:
 
     @staticmethod
-    def next_state(state, agentType, idx, action):
+    def next_state(statee, actions):
         raise NotImplementedError
 
     @staticmethod

@@ -10,6 +10,7 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
 
+
 class GraphConv(Module):
     def __init__(self, in_features, out_features, activation=None, bnorm=False):
         super(GraphConv, self).__init__()
@@ -91,23 +92,24 @@ class BackboneNN(Module):
 
 
 class PredictionNN(Module):
-    def __init__(self, in_channel, out_channel, n_hidden=64, dropout=0.2, debugging=False):
+    def __init__(self, in_channel, out_channel, n_hidden=64, dropout=0.2, debugging=False, depth_bit_length=6):
         super(PredictionNN, self).__init__()
 
         self.debugging = debugging
+        self.depth_bit_length = depth_bit_length
 
         # ~~~ dropout experiment
         fcPolicy = []
         fcQ = []
         if n_hidden == 0:
-            fcPolicy.append(nn.Linear(in_channel, out_channel))
-            fcQ.append(nn.Linear(in_channel, out_channel))
+            fcPolicy.append(nn.Linear(in_channel + self.depth_bit_length, out_channel))
+            fcQ.append(nn.Linear(in_channel + self.depth_bit_length, out_channel))
         else:
-            fcPolicy.append(nn.Linear(in_channel, n_hidden))
+            fcPolicy.append(nn.Linear(in_channel + self.depth_bit_length, n_hidden))
             fcPolicy.append(nn.ReLU(inplace=True))
             fcPolicy.append(nn.Linear(n_hidden, out_channel))
 
-            fcQ.append(nn.Linear(in_channel, n_hidden))
+            fcQ.append(nn.Linear(in_channel + self.depth_bit_length, n_hidden))
             fcQ.append(nn.ReLU(inplace=True))
             fcQ.append(nn.Linear(n_hidden, 1))
 
@@ -122,7 +124,17 @@ class PredictionNN(Module):
     def forward(self, x, depth):
 
         # ~~~ add depth
+        divider = int(2 ** self.depth_bit_length)
+        depth_bit = [0.0] * self.depth_bit_length
+        for i in range(self.depth_bit_length):
+            if divider >= depth:
+                depth_bit[i] = 1.0
+            divider = int(divider / 2)
+            depth = int(depth / 2)
+
+        depth_bit = torch.FloatTensor(depth_bit).to(device)
         x = torch.max(x, dim=-2)[0]
+        x = torch.cat((x, depth_bit), dim=0)
 
         Policy = self.fcPolicy(x)
         Q = self.fcQ(x)
