@@ -159,34 +159,12 @@ class C_MCTS:
                 leaf.backup_value(score, up_to=self.root)
                 continue
             # new node
-            leaf_my_moves = []
-            leaf_opposition_moves = []
-            gorge = {}
-            Q_val = 0.0
             if self.agentType == "Predator":
-                for num in range(self.ex_fac * 2):
-                    my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
-                    if str(my_moves) not in gorge:
-                        leaf_my_moves.append(my_moves)
-                        gorge[str(my_moves)] = 1.0
-
-                for num in range(self.ex_fac):
-                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey")
-                    if str(opposition_moves) not in gorge:
-                        leaf_opposition_moves.append(opposition_moves)
-                        gorge[str(opposition_moves)] = 1.0
+                leaf_my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType, self.ex_fac * 3)
+                leaf_opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey", self.ex_fac)
             else:
-                for num in range(self.ex_fac * 4):
-                    my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType)
-                    if str(my_moves) not in gorge:
-                        leaf_my_moves.append(my_moves)
-                        gorge[str(my_moves)] = 1.0
-
-                for num in range(self.ex_fac):
-                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator")
-                    if str(opposition_moves) not in gorge:
-                        leaf_opposition_moves.append(opposition_moves)
-                        gorge[str(opposition_moves)] = 1.0
+                leaf_my_moves, Q_val = self.find_gibbs_moves(leaf.state, self.agentType, self.ex_fac * 3)
+                leaf_opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator", self.ex_fac)
 
             leaf.action_space_size = (len(leaf_my_moves), len(leaf_opposition_moves))
             leaf.backup_value(Q_val, up_to=self.root)
@@ -210,12 +188,13 @@ class C_MCTS:
                 temp_state[state[1][i]][len(state[0]) + i] = 1.0
         return temp_state
 
-    def find_gibbs_moves(self, state, active):
+    def find_gibbs_moves(self, state, active, limit):
         qval = 0.0
-        limit = 3
         todo = 'boltzman'
+        gorge = {}
 
         actions = [[], []]
+        list_actions = []
         for i in range(len(state[0])):
             actions[0].append((state[0][i], state[0][i]))
         for i in range(len(state[1])):
@@ -249,7 +228,10 @@ class C_MCTS:
                         what = np.argmax(probs)
                         move = self.env.actions[mon[0][i]][what]
                         actions[0][i] = move
-            return actions[0], qval
+                if str(actions) not in gorge:
+                    list_actions.append(actions[0])
+                    gorge[str(actions)] = 1.0
+            return list_actions, qval
 
         else:
             for lim in range(limit):
@@ -276,7 +258,10 @@ class C_MCTS:
                         what = np.argmax(probs)
                         move = self.env.actions[mon[1][i]][what]
                         actions[1][i] = move
-            return actions[1], qval
+                if str(actions) not in gorge:
+                    list_actions.append(actions[1])
+                    gorge[str(actions)] = 1.0
+            return list_actions, qval
 
     def pick_action(self, idx):
         # the idea is to pick the best 'move' after the search and send it over
@@ -344,21 +329,10 @@ class DC_MCTS:
             # new node
             predicted_moves, Q_val = self.predict_agent_moves(leaf.state, leaf.depth,
                                                               self.agentType, self.idx)
-
-            leaf_opposition_moves = []
-            gorge = {}
             if self.agentType == "Predator":
-                for num in range(self.ex_fac):
-                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey")
-                    if str(opposition_moves) not in gorge:
-                        leaf_opposition_moves.append(opposition_moves)
-                        gorge[str(opposition_moves)] = 1.0
+                leaf_opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Prey", self.ex_fac)
             else:
-                for num in range(self.ex_fac):
-                    opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator")
-                    if str(opposition_moves) not in gorge:
-                        leaf_opposition_moves.append(opposition_moves)
-                        gorge[str(opposition_moves)] = 1.0
+                leaf_opposition_moves, _ = self.find_gibbs_moves(leaf.state, "Predator", self.ex_fac)
 
             for move1 in predicted_moves:
                 for move2 in leaf_opposition_moves:
@@ -411,16 +385,20 @@ class DC_MCTS:
                 temp_state[state[1][i]][len(state[0]) + i] = 1.0
         return temp_state
 
-    def find_gibbs_moves(self, state, active):
+    def find_gibbs_moves(self, state, active, limit):
         qval = 0.0
-        limit = 3
         todo = 'boltzman'
+        gorge = {}
 
         actions = [[], []]
+        list_actions = []
         for i in range(len(state[0])):
             actions[0].append((state[0][i], state[0][i]))
         for i in range(len(state[1])):
-            actions[1].append((state[1][i], state[0][i]))
+            if state[1][i] == -1:
+                actions[1].append((-1, -1))
+            else:
+                actions[1].append((state[1][i], state[0][i]))
 
         if active == "Predator":
             for lim in range(limit):
@@ -439,17 +417,24 @@ class DC_MCTS:
                             probs[j] = probs[j - 1] + probs[j]
                         selection = rd.random()
                         what = probs.searchsorted(selection)
+                        if what >= len(self.env.actions[mon[0][i]]):
+                            print("I MESSED UP", what, len(self.env.actions[mon[0][i]]), probs)
                         move = self.env.actions[mon[0][i]][what]
                         actions[0][i] = move
                     elif todo == "greedy":
                         what = np.argmax(probs)
                         move = self.env.actions[mon[0][i]][what]
                         actions[0][i] = move
-            return actions[0], qval
+                if str(actions) not in gorge:
+                    list_actions.append(actions[0])
+                    gorge[str(actions)] = 1.0
+            return list_actions, qval
 
         else:
             for lim in range(limit):
                 for i in range(len(state[1])):
+                    if state[1][i] == -1:
+                        continue
                     actions[1][i] = (state[1][i], state[1][i])
                     mon = self.env.next_state(state, actions)
                     feat_mat = self.backbone.step_model.step(self.one_hot_state(mon))
@@ -470,7 +455,10 @@ class DC_MCTS:
                         what = np.argmax(probs)
                         move = self.env.actions[mon[1][i]][what]
                         actions[1][i] = move
-            return actions[1], qval
+                if str(actions) not in gorge:
+                    list_actions.append(actions[1])
+                    gorge[str(actions)] = 1.0
+            return list_actions, qval
 
     def pick_action(self, idx):
         # the idea is to pick the best 'move' after the search and send it over
